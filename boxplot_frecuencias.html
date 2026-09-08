@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Boxplot desde tabla de frecuencias</title>
+<style>
+  :root{
+    --bg:#f6f7fb;
+    --card:#ffffff;
+    --text:#1f2937;
+    --muted:#6b7280;
+    --border:#d1d5db;
+    --accent:#2563eb;
+    --danger:#b91c1c;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+  }
+  .wrap{
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px;
+  }
+  h1{margin:0 0 8px;font-size:clamp(1.5rem,3vw,2.2rem)}
+  .lead{color:var(--muted);margin:0 0 20px}
+  .grid{
+    display:grid;
+    grid-template-columns:minmax(300px, 0.85fr) minmax(420px,1.4fr);
+    gap:20px;
+    align-items:start;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    padding:18px;
+    box-shadow:0 6px 20px rgba(0,0,0,.05);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:8px;
+  }
+  th,td{
+    border-bottom:1px solid #e5e7eb;
+    padding:8px;
+    text-align:center;
+  }
+  th{font-size:.9rem;color:#374151}
+  input[type="number"]{
+    width:100%;
+    min-width:72px;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    font:inherit;
+    text-align:center;
+    background:white;
+  }
+  button{
+    border:0;
+    border-radius:10px;
+    padding:9px 12px;
+    font:inherit;
+    cursor:pointer;
+  }
+  .primary{background:var(--accent);color:white}
+  .secondary{background:#e5e7eb;color:#111827}
+  .danger{background:#fee2e2;color:var(--danger)}
+  .actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:14px;
+  }
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:8px;
+    margin-top:14px;
+  }
+  .stat{
+    padding:10px;
+    border:1px solid #e5e7eb;
+    border-radius:10px;
+    text-align:center;
+    background:#fafafa;
+  }
+  .stat b{display:block;font-size:1.05rem;margin-top:3px}
+  .small{font-size:.85rem;color:var(--muted)}
+  #plot{
+    width:100%;
+    min-height:320px;
+    display:block;
+  }
+  .error{
+    color:var(--danger);
+    min-height:1.3em;
+    margin-top:8px;
+    font-size:.9rem;
+  }
+  .note{
+    margin-top:12px;
+    padding:10px 12px;
+    background:#eff6ff;
+    border-radius:10px;
+    color:#1e3a8a;
+    font-size:.9rem;
+  }
+  @media(max-width:800px){
+    .grid{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Boxplot desde una tabla de frecuencias</h1>
+  <p class="lead">Modifica los valores <b>xᵢ</b> y las frecuencias <b>fᵢ</b>. El gráfico se actualiza automáticamente.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2 style="margin-top:0">Tabla de datos</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>xᵢ</th>
+            <th>fᵢ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+
+      <div class="actions">
+        <button class="primary" id="addBtn">+ Agregar fila</button>
+        <button class="secondary" id="exampleBtn">Cargar ejemplo</button>
+        <button class="secondary" id="clearBtn">Vaciar</button>
+      </div>
+
+      <div id="error" class="error"></div>
+
+      <div class="note">
+        Las frecuencias deben ser enteros no negativos. Las filas con frecuencia 0 no influyen en el boxplot.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin-top:0">Diagrama de caja y bigotes</h2>
+      <svg id="plot" viewBox="0 0 760 340" aria-label="Boxplot"></svg>
+
+      <div class="stats">
+        <div class="stat"><span class="small">Mínimo</span><b id="sMin">–</b></div>
+        <div class="stat"><span class="small">Q1</span><b id="sQ1">–</b></div>
+        <div class="stat"><span class="small">Mediana</span><b id="sMed">–</b></div>
+        <div class="stat"><span class="small">Q3</span><b id="sQ3">–</b></div>
+        <div class="stat"><span class="small">Máximo</span><b id="sMax">–</b></div>
+      </div>
+      <p class="small" style="margin-bottom:0">n = <span id="n">0</span> datos</p>
+    </section>
+  </div>
+</div>
+
+<script>
+const tbody = document.getElementById('tbody');
+const svg = document.getElementById('plot');
+const errorBox = document.getElementById('error');
+
+function makeRow(x='', f=''){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="number" step="any" class="x" value="${x}"></td>
+    <td><input type="number" step="1" min="0" class="f" value="${f}"></td>
+    <td><button class="danger remove" title="Eliminar fila">×</button></td>`;
+  tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', update));
+  tr.querySelector('.remove').addEventListener('click', () => {
+    tr.remove();
+    if (!tbody.children.length) makeRow();
+    update();
+  });
+  tbody.appendChild(tr);
+}
+
+function loadExample(){
+  tbody.innerHTML = '';
+  [[1,2],[2,3],[3,5],[4,7],[5,4],[6,2],[7,1]].forEach(([x,f]) => makeRow(x,f));
+  update();
+}
+
+function clearAll(){
+  tbody.innerHTML = '';
+  for(let i=0;i<6;i++) makeRow();
+  update();
+}
+
+// Cuartiles por "mediana de las mitades":
+// mediana global; si n es impar, la mediana se excluye de ambas mitades.
+function median(arr){
+  const n = arr.length;
+  if(n === 0) return NaN;
+  const m = Math.floor(n/2);
+  return n % 2 ? arr[m] : (arr[m-1] + arr[m]) / 2;
+}
+
+function fiveNumberSummary(data){
+  const a = [...data].sort((p,q)=>p-q);
+  const n = a.length;
+  const med = median(a);
+  const mid = Math.floor(n/2);
+  const lower = a.slice(0, mid);
+  const upper = n % 2 ? a.slice(mid+1) : a.slice(mid);
+  return {
+    min:a[0],
+    q1: n===1 ? a[0] : median(lower),
+    med,
+    q3: n===1 ? a[0] : median(upper),
+    max:a[n-1]
+  };
+}
+
+function getData(){
+  const rows = [...tbody.querySelectorAll('tr')];
+  const pairs = [];
+  let invalid = false;
+
+  for(const row of rows){
+    const xs = row.querySelector('.x').value.trim();
+    const fs = row.querySelector('.f').value.trim();
+    if(xs === '' && fs === '') continue;
+
+    const x = Number(xs);
+    const f = Number(fs);
+
+    if(!Number.isFinite(x) || !Number.isInteger(f) || f < 0){
+      invalid = true;
+      continue;
+    }
+    if(f > 0) pairs.push([x,f]);
+  }
+  return {pairs, invalid};
+}
+
+function expandData(pairs){
+  const arr = [];
+  for(const [x,f] of pairs){
+    for(let i=0;i<f;i++) arr.push(x);
+  }
+  return arr;
+}
+
+function fmt(x){
+  if(!Number.isFinite(x)) return '–';
+  return Number.isInteger(x) ? String(x) : String(Math.round(x*1000)/1000);
+}
+
+function svgEl(name, attrs={}){
+  const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
+  return el;
+}
+
+function drawEmpty(text='Ingresa datos para generar el boxplot'){
+  svg.innerHTML='';
+  const t=svgEl('text',{x:380,y:170,'text-anchor':'middle',fill:'#6b7280','font-size':'18'});
+  t.textContent=text;
+  svg.appendChild(t);
+}
+
+function drawBoxplot(s){
+  svg.innerHTML='';
+  const W=760, H=340;
+  const left=70, right=700, axisY=275;
+  const range=s.max-s.min;
+  const pad = range===0 ? 1 : range*0.12;
+  const lo=s.min-pad, hi=s.max+pad;
+  const scale=v => left + (v-lo)/(hi-lo)*(right-left);
+
+  // título del eje
+  const axisTitle=svgEl('text',{x:385,y:325,'text-anchor':'middle',fill:'#374151','font-size':'15'});
+  axisTitle.textContent='Valores';
+  svg.appendChild(axisTitle);
+
+  // eje
+  svg.appendChild(svgEl('line',{x1:left,y1:axisY,x2:right,y2:axisY,stroke:'#374151','stroke-width':'2'}));
+
+  // ticks
+  const ticks=8;
+  for(let i=0;i<=ticks;i++){
+    const v=lo+(hi-lo)*i/ticks;
+    const x=scale(v);
+    svg.appendChild(svgEl('line',{x1:x,y1:axisY-5,x2:x,y2:axisY+5,stroke:'#374151'}));
+    const tx=svgEl('text',{x:x,y:axisY+22,'text-anchor':'middle',fill:'#4b5563','font-size':'12'});
+    tx.textContent=fmt(v);
+    svg.appendChild(tx);
+  }
+
+  const y=150, boxH=90, top=y-boxH/2, bottom=y+boxH/2;
+  const xMin=scale(s.min), xQ1=scale(s.q1), xMed=scale(s.med), xQ3=scale(s.q3), xMax=scale(s.max);
+
+  // bigotes
+  svg.appendChild(svgEl('line',{x1:xMin,y1:y,x2:xQ1,y2:y,stroke:'#111827','stroke-width':'3'}));
+  svg.appendChild(svgEl('line',{x1:xQ3,y1:y,x2:xMax,y2:y,stroke:'#111827','stroke-width':'3'}));
+  svg.appendChild(svgEl('line',{x1:xMin,y1:y-25,x2:xMin,y2:y+25,stroke:'#111827','stroke-width':'3'}));
+  svg.appendChild(svgEl('line',{x1:xMax,y1:y-25,x2:xMax,y2:y+25,stroke:'#111827','stroke-width':'3'}));
+
+  // caja
+  svg.appendChild(svgEl('rect',{
+    x:Math.min(xQ1,xQ3), y:top, width:Math.max(1,Math.abs(xQ3-xQ1)), height:boxH,
+    fill:'#dbeafe', stroke:'#2563eb','stroke-width':'3', rx:'4'
+  }));
+
+  // mediana
+  svg.appendChild(svgEl('line',{x1:xMed,y1:top,x2:xMed,y2:bottom,stroke:'#dc2626','stroke-width':'4'}));
+
+  // etiquetas superiores
+  const vals = [
+    ['mín',s.min,xMin],['Q1',s.q1,xQ1],['med',s.med,xMed],['Q3',s.q3,xQ3],['máx',s.max,xMax]
+  ];
+  vals.forEach(([label,val,x],i)=>{
+    const ty = i%2===0 ? 55 : 82;
+    svg.appendChild(svgEl('line',{x1:x,y1:ty+8,x2:x,y2:top-5,stroke:'#9ca3af','stroke-dasharray':'3 4'}));
+    const t=svgEl('text',{x:x,y:ty,'text-anchor':'middle',fill:'#374151','font-size':'13'});
+    t.textContent=`${label}: ${fmt(val)}`;
+    svg.appendChild(t);
+  });
+}
+
+function update(){
+  const {pairs, invalid}=getData();
+  errorBox.textContent = invalid ? 'Revisa las filas: xᵢ debe ser numérico y fᵢ un entero ≥ 0.' : '';
+
+  const data = expandData(pairs);
+  document.getElementById('n').textContent=data.length;
+
+  if(!data.length){
+    ['sMin','sQ1','sMed','sQ3','sMax'].forEach(id=>document.getElementById(id).textContent='–');
+    drawEmpty();
+    return;
+  }
+
+  const s=fiveNumberSummary(data);
+  document.getElementById('sMin').textContent=fmt(s.min);
+  document.getElementById('sQ1').textContent=fmt(s.q1);
+  document.getElementById('sMed').textContent=fmt(s.med);
+  document.getElementById('sQ3').textContent=fmt(s.q3);
+  document.getElementById('sMax').textContent=fmt(s.max);
+  drawBoxplot(s);
+}
+
+document.getElementById('addBtn').addEventListener('click',()=>{makeRow(); update();});
+document.getElementById('exampleBtn').addEventListener('click',loadExample);
+document.getElementById('clearBtn').addEventListener('click',clearAll);
+
+loadExample();
+</script>
+</body>
+</html>
